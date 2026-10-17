@@ -215,6 +215,14 @@ table.who-decides{width:100%;border-collapse:collapse;min-width:520px;font-size:
 .start-here{background:var(--sunk);border-radius:12px;padding:14px 16px;font-size:15px}
 .start-here b{display:block;margin-bottom:2px}
 .closing-line{font-family:var(--display);font-weight:700;font-size:clamp(20px,2.8vw,25px);line-height:1.4;text-align:center;padding:18px 8px;border-block:1px solid var(--line)}
+.rq{font-weight:700;margin-bottom:10px}
+.pick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:16px}
+.pick button{border:1.5px solid color-mix(in srgb,var(--c) 35%,var(--line));background:var(--surface);border-radius:12px;padding:10px 12px;text-align:right;display:flex;flex-direction:column;gap:3px;min-width:0;transition:background .15s,border-color .15s}
+.pick button b{display:flex;align-items:center;gap:7px;font-size:15px}
+.pick button b::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.pick button small{font-size:12.5px;color:var(--muted);line-height:1.35}
+.pick button:hover{border-color:var(--c)}
+.pick button[aria-pressed="true"]{background:color-mix(in srgb,var(--c) 15%,var(--surface));border-color:var(--c);box-shadow:0 0 0 1px var(--c)}
 .reflect textarea{width:100%;min-height:96px;resize:vertical;border:1.5px solid var(--line-strong);background:var(--surface);border-radius:10px;padding:10px 12px}
 .reflect .tiny{font-size:13px;color:var(--muted);margin-top:4px}
 #copyFallback{width:100%;min-height:150px;font-size:13px;border-radius:10px;border:1px solid var(--line-strong);background:var(--sunk);padding:10px}
@@ -235,6 +243,9 @@ table.who-decides{width:100%;border-collapse:collapse;min-width:520px;font-size:
   .cycle svg{max-width:310px}
   .scale{grid-template-columns:1fr}
   .scale-axis{display:none}
+  .pick{grid-template-columns:1fr}
+  .pick button{flex-direction:row;align-items:baseline;gap:10px}
+  .pick button b{flex:0 0 92px}
 }
 @media (max-width:560px){
   body{font-size:16px}
@@ -442,8 +453,10 @@ table.who-decides{width:100%;border-collapse:collapse;min-width:520px;font-size:
   </div>
   <p class="closing-line">אל תשאלו רק מה התלמידים צריכים לבצע.<br>שאלו גם: מה הם ילמדו לנהל בעצמם?</p>
   <div class="reflect">
-   <label for="reflection">איזו החלטה אחת אתם מקבלים היום במקום התלמידים, ואפשר להעביר אליהם בהדרגה?</label>
-   <textarea id="reflection" maxlength="700" placeholder="לדוגמה: אני קובע/ת את דרך הסיכום. אציע שלוש דרכים ואבקש מכל תלמיד לנמק את בחירתו."></textarea>
+   <p class="rq" id="pickQ">לפניכם חמשת המרכיבים של למידה עצמאית: מטרה, תכנון, בחירה, בקרה ורפלקציה.<br>בחרו מרכיב אחד שהייתם מעבירים לאחריות התלמידים, ונמקו את בחירתכם.</p>
+   <div class="pick" id="pick" role="group" aria-labelledby="pickQ"></div>
+   <label for="reflection">הנימוק שלי</label>
+   <textarea id="reflection" maxlength="700" placeholder="לדוגמה: בחרתי בבחירה. היום כל התלמידים מסכמים באותה דרך. אציע שלוש דרכי סיכום ואבקש מכל תלמיד לנמק מה מתאים לו, כי כך ילמדו להכיר את דרכי הלמידה שלהם."></textarea>
    <p class="tiny">נשמר רק בדפדפן הזה ולא נשלח לאף אחד.</p>
   </div>
   <div class="row-btns"><button class="btn primary" id="copyBtn">העתקת הסיכום שלי</button></div>
@@ -502,7 +515,8 @@ var QUESTIONS=[
 ];
 var RATE=['לא','חלקית','כן'];
 
-function fresh(){return {screen:0,visited:[true,false,false,false,false],pred:null,cycle:0,caseIdx:0,caseAns:{},ratings:[null,null,null,null,null],task:'',reflection:''}}
+function fresh(){return {screen:0,visited:[true,false,false,false,false],pred:null,cycle:0,caseIdx:0,caseAns:{},ratings:[null,null,null,null,null],task:'',reflection:'',pick:null}}
+var PICK_DESC=['מה צריך לדעת או לעשות בסוף','באיזה סדר מתקדמים ובכמה זמן','באיזו דרך לומדים','איך בודקים שהבנו','מה לומדים מהתהליך'];
 var S=fresh();
 try{var d=JSON.parse(localStorage.getItem(KEY)||'null');if(d&&typeof d==='object'){S=Object.assign(fresh(),d);
   if(!Array.isArray(S.visited)||S.visited.length!==5)S.visited=fresh().visited;
@@ -627,22 +641,30 @@ function renderChecks(){
 }
 $('#taskName').addEventListener('input',function(e){S.task=e.target.value;save()});
 $('#reflection').addEventListener('input',function(e){S.reflection=e.target.value;save()});
+function buildPick(){
+  $('#pick').innerHTML=COMPS.map(function(c,i){return '<button class="k'+(i+1)+'" data-pick="'+i+'" aria-pressed="false"><b>'+c.name+'</b><small>'+PICK_DESC[i]+'</small></button>'}).join('');
+  $$('[data-pick]').forEach(function(b){b.addEventListener('click',function(){var i=+b.dataset.pick;S.pick=S.pick===i?null:i;save();renderPick()})});
+}
+function renderPick(){
+  var p=(S.pick===0||S.pick>0)&&S.pick<5?+S.pick:null;
+  $$('[data-pick]').forEach(function(b){b.setAttribute('aria-pressed',String(+b.dataset.pick===p))});
+}
 $('#copyBtn').addEventListener('click',function(){
   var lines=['שיעור 1 · מי מנהל את הלמידה?','','המשימה שבדקתי: '+(S.task.trim()||'(לא צוינה)')];
   QUESTIONS.forEach(function(q,i){lines.push(COMPS[i].name+': '+(S.ratings[i]==null?'לא סומן':RATE[S.ratings[i]]))});
   var min=3,idx=-1;S.ratings.forEach(function(v,i){if(v!=null&&v<min){min=v;idx=i}});
   if(idx>-1&&min<2)lines.push('','נקודת פתיחה: '+COMPS[idx].name+' – '+COMPS[idx].move);
-  lines.push('','החלטה שאעביר לתלמידים בהדרגה:',S.reflection.trim()||'(עוד לא נכתבה)','','למידה עצמאית היא היכולת לנהל את תהליך הלמידה ולקחת עליו אחריות.');
+  lines.push('','המרכיב שאעביר לאחריות התלמידים: '+(S.pick!=null&&COMPS[S.pick]?COMPS[S.pick].name:'(לא נבחר)'),'הנימוק: '+(S.reflection.trim()||'(עוד לא נכתב)'),'','למידה עצמאית היא היכולת לנהל את תהליך הלמידה ולקחת עליו אחריות.');
   var txt=lines.join('\n'),fb=$('#copyFallback');
   function fallback(){fb.hidden=false;fb.value=txt;fb.focus();fb.select();toast('סמנו את הטקסט בתיבה והעתיקו ידנית')}
   try{navigator.clipboard.writeText(txt).then(function(){fb.hidden=true;toast('הסיכום הועתק. אפשר להדביק אותו במסמך או ב־Classroom')},fallback)}catch(e){fallback()}
 });
 
 function renderAll(){
-  renderPred();renderCycle();renderCase();renderChecks();
+  renderPred();renderCycle();renderCase();renderChecks();renderPick();
   $('#taskName').value=S.task||'';$('#reflection').value=S.reflection||'';$('#copyFallback').hidden=true;
 }
-buildCycle();buildChecks();renderAll();show(S.screen,false);
+buildCycle();buildChecks();buildPick();renderAll();show(S.screen,false);
 })();
 </script>
 
